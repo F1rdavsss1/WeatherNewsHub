@@ -18,3 +18,17 @@ class SettingsState(StatesGroup):
     waiting_for_city = State()
     waiting_for_time = State()
     waiting_for_favorite_city = State()
+
+
+class FavoriteState(StatesGroup):
+    """Состояния для избранных городов"""
+    waiting_for_add = State()
+    waiting_for_remove = State()
+    waiting_for_setcity = State()
+
+
+class SubscriptionState(StatesGroup):
+    """Состояния для подписок"""
+    waiting_for_subscribe = State()
+    waiting_for_unsubscribe = State()
+    waiting_for_daily_time = State()

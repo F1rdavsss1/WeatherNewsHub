@@ -20,6 +20,9 @@ def get_news_categories_keyboard() -> InlineKeyboardMarkup:
     for text, callback_data in categories:
         builder.button(text=text, callback_data=callback_data)
     
+    # Добавляем кнопку отмены
+    builder.button(text="❌ Отмена", callback_data="cancel")
+    
     builder.adjust(2)  # 2 кнопки в ряд
     return builder.as_markup()
 

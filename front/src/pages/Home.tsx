@@ -29,15 +29,15 @@ export const Home = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Forecast Query с fallback на mock данные
+  // Forecast Query с fallback на mock данные - прогноз на 30 дней
   const { data: forecastData, error: forecastError } = useQuery({
     queryKey: ['forecast', currentCity],
-    queryFn: () => weatherApi.getForecast(currentCity, 7),
+    queryFn: () => weatherApi.getForecast(currentCity, 30),
     retry: 1,
     staleTime: 5 * 60 * 1000,
   });
 
-  // News Query с fallback на mock данные
+  // News Query с fallback на mock данные и автообновлением каждый час
   const { data: newsData, isLoading: newsLoading, error: newsError } = useQuery({
     queryKey: ['news', activeCategory, newsPage],
     queryFn: () => newsApi.getNews({
@@ -47,7 +47,8 @@ export const Home = () => {
       pageSize: 8,
     }),
     retry: 1,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 60 * 1000, // 1 час
+    refetchInterval: 60 * 60 * 1000, // Обновлять каждый час
   });
 
   // Используем реальные данные или fallback на mock
@@ -182,17 +183,17 @@ export const Home = () => {
                 </div>
               </div>
 
-              {/* Прогноз */}
+              {/* Прогноз на месяц */}
               <div className="mt-8 glass-effect rounded-3xl p-8">
-                <h3 className="text-2xl font-bold text-white mb-6">Прогноз</h3>
+                <h3 className="text-2xl font-bold text-white mb-6">Прогноз на месяц</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-                  {forecast.days.map((day, index) => (
+                  {forecast.days.slice(0, 30).map((day, index) => (
                     <div
                       key={index}
                       className="bg-dark-card/50 rounded-2xl p-4 text-center hover:bg-dark-cardHover transition-default cursor-pointer"
                     >
                       <div className="text-sm text-gray-400 mb-2">
-                        {format(new Date(day.date), 'EEE', { locale: ru })}
+                        {format(new Date(day.date), 'd MMM', { locale: ru })}
                       </div>
                       <img
                         src={getWeatherIcon(day.icon)}
@@ -225,7 +226,7 @@ export const Home = () => {
               <h2 className="text-2xl font-bold text-white">Лента новостей</h2>
               {isUsingMockNews && (
                 <span className="text-xs text-yellow-400 px-3 py-1 bg-yellow-400/10 rounded-full">
-                  ⚠️ Демо данные
+                  ⚠️ Демо данные (API недоступен)
                 </span>
               )}
             </div>
@@ -265,14 +266,14 @@ export const Home = () => {
                     href={article.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="glass-effect rounded-2xl p-6 hover:scale-105 transition-all duration-300 group"
+                    className="glass-effect rounded-2xl p-6 hover:scale-105 transition-all duration-300 group flex flex-col"
                   >
-                    <h3 className="text-white font-semibold mb-3 line-clamp-3 group-hover:text-primary-400 transition-colors text-lg">
+                    <h3 className="text-white font-semibold mb-3 line-clamp-2 group-hover:text-primary-400 transition-colors text-lg">
                       {article.title}
                     </h3>
                     
                     {article.description && (
-                      <p className="text-gray-400 text-sm mb-4 line-clamp-3">
+                      <p className="text-gray-400 text-sm mb-4 line-clamp-3 flex-1">
                         {article.description}
                       </p>
                     )}

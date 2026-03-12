@@ -21,7 +21,7 @@ router = Router()
 
 @router.message(Command("weather"))
 @router.message(F.text == "🌤 Погода")
-async def cmd_weather(message: Message, session: AsyncSession, state: FSMContext, redis: aioredis.Redis):
+async def cmd_weather(message: Message, session: AsyncSession, state: FSMContext):
     """Обработчик команды /weather"""
     # Парсинг аргументов
     args = message.text.split(maxsplit=1)
@@ -56,27 +56,12 @@ async def cmd_weather(message: Message, session: AsyncSession, state: FSMContext
     else:
         city = args[1]
     
-    # Проверка кэша
-    cache_key = f"weather:{city.lower()}"
-    cached_data = await redis.get(cache_key)
+    # Запрос к API (без кэша)
+    weather = await weather_api.get_current_weather(city)
     
-    if cached_data:
-        weather = json.loads(cached_data)
-        logger.info(f"Погода для {city} получена из кэша")
-    else:
-        # Запрос к API
-        weather = await weather_api.get_current_weather(city)
-        
-        if not weather:
-            await message.answer(f"❌ Город '{city}' не найден. Проверьте правильность написания.")
-            return
-        
-        # Сохранение в кэш
-        await redis.setex(
-            cache_key,
-            settings.WEATHER_CACHE_TTL,
-            json.dumps(weather, ensure_ascii=False)
-        )
+    if not weather:
+        await message.answer(f"❌ Город '{city}' не найден. Проверьте правильность написания.")
+        return
     
     # Формирование ответа
     weather_text = (
@@ -96,7 +81,7 @@ async def cmd_weather(message: Message, session: AsyncSession, state: FSMContext
 
 
 @router.message(WeatherState.waiting_for_city)
-async def process_weather_city(message: Message, state: FSMContext, redis: aioredis.Redis):
+async def process_weather_city(message: Message, state: FSMContext):
     """Обработка ввода города для погоды"""
     city = message.text.strip()
     
@@ -105,26 +90,14 @@ async def process_weather_city(message: Message, state: FSMContext, redis: aiore
         await message.answer("Отменено.")
         return
     
-    # Проверка кэша
-    cache_key = f"weather:{city.lower()}"
-    cached_data = await redis.get(cache_key)
+    # Запрос к API (без кэша)
+    weather = await weather_api.get_current_weather(city)
     
-    if cached_data:
-        weather = json.loads(cached_data)
-    else:
-        weather = await weather_api.get_current_weather(city)
-        
-        if not weather:
-            await message.answer(
-                f"❌ Город '{city}' не найден. Попробуйте еще раз или отправьте '❌ Отмена'."
-            )
-            return
-        
-        await redis.setex(
-            cache_key,
-            settings.WEATHER_CACHE_TTL,
-            json.dumps(weather, ensure_ascii=False)
+    if not weather:
+        await message.answer(
+            f"❌ Город '{city}' не найден. Попробуйте еще раз или отправьте '❌ Отмена'."
         )
+        return
     
     weather_text = (
         f"🌤 Погода в {weather['city']}, {weather['country']}\n\n"
@@ -144,7 +117,7 @@ async def process_weather_city(message: Message, state: FSMContext, redis: aiore
 
 
 @router.message(Command("forecast"))
-async def cmd_forecast(message: Message, redis: aioredis.Redis):
+async def cmd_forecast(message: Message):
     """Обработчик команды /forecast"""
     args = message.text.split()
     
@@ -159,24 +132,12 @@ async def cmd_forecast(message: Message, redis: aioredis.Redis):
         await message.answer("❌ Количество дней должно быть от 1 до 7.")
         return
     
-    # Проверка кэша
-    cache_key = f"forecast:{city.lower()}:{days}"
-    cached_data = await redis.get(cache_key)
+    # Запрос к API (без кэша)
+    forecast = await weather_api.get_forecast(city, days)
     
-    if cached_data:
-        forecast = json.loads(cached_data)
-    else:
-        forecast = await weather_api.get_forecast(city, days)
-        
-        if not forecast:
-            await message.answer(f"❌ Не удалось получить прогноз для города '{city}'.")
-            return
-        
-        await redis.setex(
-            cache_key,
-            settings.WEATHER_CACHE_TTL,
-            json.dumps(forecast, ensure_ascii=False)
-        )
+    if not forecast:
+        await message.answer(f"❌ Не удалось получить прогноз для города '{city}'.")
+        return
     
     # Формирование ответа
     forecast_text = f"📅 Прогноз погоды для {forecast['city']}, {forecast['country']}:\n\n"
@@ -192,7 +153,7 @@ async def cmd_forecast(message: Message, redis: aioredis.Redis):
 
 
 @router.message(Command("mycity"))
-async def cmd_mycity(message: Message, session: AsyncSession, redis: aioredis.Redis):
+async def cmd_mycity(message: Message, session: AsyncSession):
     """Погода в сохраненном городе"""
     stmt = select(User).where(User.telegram_id == message.from_user.id)
     result = await session.execute(stmt)
@@ -207,24 +168,12 @@ async def cmd_mycity(message: Message, session: AsyncSession, redis: aioredis.Re
     
     city = user.default_city
     
-    # Проверка кэша
-    cache_key = f"weather:{city.lower()}"
-    cached_data = await redis.get(cache_key)
+    # Запрос к API (без кэша)
+    weather = await weather_api.get_current_weather(city)
     
-    if cached_data:
-        weather = json.loads(cached_data)
-    else:
-        weather = await weather_api.get_current_weather(city)
-        
-        if not weather:
-            await message.answer(f"❌ Не удалось получить погоду для '{city}'.")
-            return
-        
-        await redis.setex(
-            cache_key,
-            settings.WEATHER_CACHE_TTL,
-            json.dumps(weather, ensure_ascii=False)
-        )
+    if not weather:
+        await message.answer(f"❌ Не удалось получить погоду для '{city}'.")
+        return
     
     weather_text = (
         f"🌤 Погода в {weather['city']}, {weather['country']}\n\n"

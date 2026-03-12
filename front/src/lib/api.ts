@@ -61,8 +61,8 @@ export const userApi = {
 };
 
 export const authApi = {
-  loginWithTelegram: async (telegramData: any): Promise<{ token: string; user: User }> => {
-    const { data } = await api.post(`/auth/telegram`, telegramData);
+  loginWithTelegram: async (code: string): Promise<{ success: boolean; user?: any; message?: string }> => {
+    const { data } = await api.post(`/auth/telegram`, { code });
     return data;
   },
   

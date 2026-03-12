@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User, Favorite
+from app.models.user import User, FavoriteCity
 from app.states.user_states import SettingsState
 from app.keyboards.inline import get_favorites_keyboard
 

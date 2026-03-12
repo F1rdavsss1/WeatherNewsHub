@@ -17,28 +17,29 @@ router = Router()
 
 @router.message(Command("news"))
 @router.message(F.text == "📰 Новости")
-async def cmd_news(message: Message, redis: aioredis.Redis):
-    """Обработчик команды /news"""
+async def cmd_news(message: Message):
+    """Обработчик команды /news - показывает категории или новости"""
     args = message.text.split(maxsplit=1)
     
-    # Определение категории
+    # Если указана категория
     if len(args) > 1 and message.text.startswith("/news"):
         category = args[1].lower()
         if category not in NewsAPI.CATEGORIES:
             await message.answer(
-                f"❌ Неизвестная категория. Доступные категории:\n" +
-                "\n".join([f"• {cat}" for cat in NewsAPI.CATEGORIES.keys()])
+                f"❌ Неизвестная категория '{category}'.\n\n"
+                f"📰 Доступные категории:\n" +
+                "\n".join([f"• {name} - /news {code}" for code, name in NewsAPI.CATEGORIES.items()])
             )
             return
+        await send_news(message, category)
     else:
         # Показать клавиатуру с категориями
         await message.answer(
-            "Выберите категорию новостей:",
+            "📰 Выберите категорию новостей:\n\n" +
+            "\n".join([f"• {name} - /news {code}" for code, name in NewsAPI.CATEGORIES.items()]),
             reply_markup=get_news_categories_keyboard()
         )
         return
-    
-    await send_news(message, category, redis)
 
 
 @router.message(Command("categories"))
@@ -54,31 +55,18 @@ async def cmd_categories(message: Message):
     await message.answer(categories_text)
 
 
-async def send_news(message: Message, category: str, redis: aioredis.Redis):
-    """Отправка новостей по категории"""
-    # Проверка кэша
-    cache_key = f"news:{category}"
-    cached_data = await redis.get(cache_key)
+async def send_news(message: Message, category: str):
+    """Отправка новостей по категории без картинок"""
+    # Запрос к API
+    news = await news_api.get_top_headlines(category=category, page_size=5)
     
-    if cached_data:
-        news = json.loads(cached_data)
-        logger.info(f"Новости категории {category} получены из кэша")
-    else:
-        news = await news_api.get_top_headlines(category=category, page_size=5)
-        
-        if not news:
-            await message.answer("❌ Не удалось получить новости. Попробуйте позже.")
-            return
-        
-        await redis.setex(
-            cache_key,
-            settings.NEWS_CACHE_TTL,
-            json.dumps(news, ensure_ascii=False)
-        )
+    if not news:
+        await message.answer("❌ Не удалось получить новости. Попробуйте позже.")
+        return
     
-    # Формирование ответа
+    # Формирование ответа без картинок
     category_name = NewsAPI.get_category_name(category)
-    news_text = f"📰 Топ новости ({category_name}):\n\n"
+    news_text = f"📰 Топ-5 новостей ({category_name}):\n\n"
     
     for i, article in enumerate(news, 1):
         news_text += (

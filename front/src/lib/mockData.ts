@@ -19,64 +19,29 @@ export const mockWeather: WeatherResponse = {
 };
 
 export const mockForecast: ForecastResponse = {
-  days: [
-    {
-      date: new Date(Date.now()).toISOString(),
-      temperature: { min: 1, max: 7, day: 5 },
-      description: 'Облачно',
-      icon: '03d',
-      humidity: 76,
-      windSpeed: 3,
-    },
-    {
-      date: new Date(Date.now() + 86400000).toISOString(),
-      temperature: { min: 2, max: 8, day: 6 },
-      description: 'Ясно',
-      icon: '01d',
-      humidity: 65,
-      windSpeed: 2,
-    },
-    {
-      date: new Date(Date.now() + 86400000 * 2).toISOString(),
-      temperature: { min: 3, max: 9, day: 7 },
-      description: 'Дождь',
-      icon: '10d',
-      humidity: 85,
-      windSpeed: 5,
-    },
-    {
-      date: new Date(Date.now() + 86400000 * 3).toISOString(),
-      temperature: { min: 0, max: 5, day: 3 },
-      description: 'Снег',
-      icon: '13d',
-      humidity: 90,
-      windSpeed: 4,
-    },
-    {
-      date: new Date(Date.now() + 86400000 * 4).toISOString(),
-      temperature: { min: -2, max: 3, day: 1 },
-      description: 'Облачно',
-      icon: '04d',
-      humidity: 80,
-      windSpeed: 3,
-    },
-    {
-      date: new Date(Date.now() + 86400000 * 5).toISOString(),
-      temperature: { min: 1, max: 6, day: 4 },
-      description: 'Ясно',
-      icon: '01d',
-      humidity: 70,
-      windSpeed: 2,
-    },
-    {
-      date: new Date(Date.now() + 86400000 * 6).toISOString(),
-      temperature: { min: 2, max: 8, day: 6 },
-      description: 'Переменная облачность',
-      icon: '02d',
-      humidity: 72,
-      windSpeed: 3,
-    },
-  ],
+  days: Array.from({ length: 30 }, (_, i) => {
+    const baseTemp = 5;
+    const tempVariation = Math.sin(i / 3) * 4; // Волнообразное изменение
+    const randomVariation = (Math.random() - 0.5) * 3;
+    
+    const icons = ['01d', '02d', '03d', '04d', '09d', '10d', '13d'];
+    const descriptions = ['Ясно', 'Малооблачно', 'Облачно', 'Пасмурно', 'Дождь', 'Небольшой дождь', 'Снег'];
+    
+    const iconIndex = Math.floor(Math.random() * icons.length);
+    
+    return {
+      date: new Date(Date.now() + 86400000 * i).toISOString(),
+      temperature: {
+        min: Math.round(baseTemp + tempVariation + randomVariation - 2),
+        max: Math.round(baseTemp + tempVariation + randomVariation + 5),
+        day: Math.round(baseTemp + tempVariation + randomVariation + 1.5)
+      },
+      description: descriptions[iconIndex],
+      icon: icons[iconIndex],
+      humidity: 65 + Math.floor(Math.random() * 20),
+      windSpeed: 2 + Math.random() * 4,
+    };
+  }),
 };
 
 export const mockNews: NewsResponse = {

@@ -1,42 +1,36 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { authApi } from '../lib/api';
 import { useStore } from '../store/useStore';
 import toast from 'react-hot-toast';
 
-const loginSchema = z.object({
-  email: z.string().email('Неверный формат email'),
-  password: z.string().min(6, 'Пароль должен быть не менее 6 символов'),
-});
-
-type LoginForm = z.infer<typeof loginSchema>;
-
 export const Login = () => {
   const navigate = useNavigate();
-  const { setUser, setToken } = useStore();
+  const { setUser } = useStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [code, setCode] = useState('');
+  const [showCodeInput, setShowCodeInput] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
-  });
+  const handleTelegramLogin = async () => {
+    if (!code || code.length !== 6) {
+      toast.error('Введите 6-значный код из Telegram');
+      return;
+    }
 
-  const onSubmit = async (data: LoginForm) => {
     setIsLoading(true);
     try {
-      const response = await authApi.loginWithEmail(data.email, data.password);
-      setToken(response.token);
-      setUser(response.user);
-      toast.success('Вход выполнен успешно!');
-      navigate('/');
+      const response = await authApi.loginWithTelegram(code);
+      
+      if (response.success) {
+        setUser(response.user);
+        localStorage.setItem('telegram_user', JSON.stringify(response.user));
+        toast.success('Вход выполнен успешно!');
+        navigate('/');
+      } else {
+        toast.error(response.message || 'Неверный код');
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Ошибка входа');
+      toast.error('Ошибка входа. Проверьте код.');
     } finally {
       setIsLoading(false);
     }
@@ -52,84 +46,83 @@ export const Login = () => {
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">
-            Вход в аккаунт
+            Вход через Telegram
           </h1>
           <p className="text-gray-400">
-            Войдите, чтобы получить доступ ко всем функциям
+            Получите код в Telegram боте
           </p>
         </div>
 
-        {/* Telegram Login */}
-        <div className="mb-6">
-          <button
-            className="w-full px-6 py-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-default text-white font-medium flex items-center justify-center space-x-2"
-            onClick={() => toast.success('Telegram авторизация в разработке')}
-          >
-            <span>✈️</span>
-            <span>Войти через Telegram</span>
-          </button>
-        </div>
+        {!showCodeInput ? (
+          <div className="space-y-4">
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-6">
+              <p className="text-blue-300 text-sm mb-2">
+                📱 Как войти:
+              </p>
+              <ol className="text-gray-300 text-sm space-y-1 list-decimal list-inside">
+                <li>Откройте Telegram бот @WeatherNewsHubot</li>
+                <li>Отправьте команду /login</li>
+                <li>Скопируйте полученный код</li>
+                <li>Введите код ниже</li>
+              </ol>
+            </div>
 
-        <div className="relative mb-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-dark-border"></div>
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-dark-card text-gray-500">или</span>
-          </div>
-        </div>
-
-        {/* Email Login Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
-            <input
-              type="email"
-              placeholder="your@email.com"
-              className="w-full px-4 py-3 rounded-xl bg-dark-card/50 border border-dark-border text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-default"
-              {...register('email')}
-            />
-            {errors.email && (
-              <p className="mt-1 text-sm text-red-400">{errors.email.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Пароль</label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-xl bg-dark-card/50 border border-dark-border text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-default"
-              {...register('password')}
-            />
-            {errors.password && (
-              <p className="mt-1 text-sm text-red-400">{errors.password.message}</p>
-            )}
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 rounded-xl transition-default text-white font-medium disabled:opacity-50"
-          >
-            {isLoading ? 'Загрузка...' : 'Войти'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center space-y-2">
-          <button className="text-sm text-primary-400 hover:text-primary-300 transition-default">
-            Забыли пароль?
-          </button>
-          <div className="text-sm text-gray-400">
-            Нет аккаунта?{' '}
             <button
-              onClick={() => navigate('/register')}
-              className="text-primary-400 hover:text-primary-300 font-medium transition-default"
+              onClick={() => setShowCodeInput(true)}
+              className="w-full px-6 py-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-default text-white font-medium flex items-center justify-center space-x-2"
             >
-              Зарегистрироваться
+              <span>✈️</span>
+              <span>У меня есть код</span>
+            </button>
+
+            <a
+              href="https://t.me/WeatherNewsHubot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full px-6 py-3 bg-dark-card/50 hover:bg-dark-cardHover border border-dark-border rounded-xl transition-default text-white font-medium text-center"
+            >
+              Открыть Telegram бота
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Код из Telegram
+              </label>
+              <input
+                type="text"
+                placeholder="123456"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-3 rounded-xl bg-dark-card/50 border border-dark-border text-white text-center text-2xl tracking-widest placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-default"
+                autoFocus
+              />
+              <p className="mt-2 text-xs text-gray-400 text-center">
+                Код действителен 5 минут
+              </p>
+            </div>
+
+            <button
+              onClick={handleTelegramLogin}
+              disabled={isLoading || code.length !== 6}
+              className="w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 rounded-xl transition-default text-white font-medium disabled:opacity-50"
+            >
+              {isLoading ? 'Проверка...' : 'Войти'}
+            </button>
+
+            <button
+              onClick={() => {
+                setShowCodeInput(false);
+                setCode('');
+              }}
+              className="w-full px-6 py-3 bg-dark-card/50 hover:bg-dark-cardHover rounded-xl transition-default text-gray-300 font-medium"
+            >
+              Назад
             </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

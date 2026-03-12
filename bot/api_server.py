@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import httpx
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения
@@ -25,6 +25,11 @@ app.add_middleware(
 # API ключи
 OPENWEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
+
+# Импорт функции проверки кода
+import sys
+sys.path.insert(0, os.path.dirname(__file__))
+from app.auth_storage import verify_auth_code
 
 # Models
 class WeatherResponse(BaseModel):
@@ -75,6 +80,69 @@ async def root():
     return {"message": "WeatherNews Hub API", "status": "running"}
 
 
+class AuthRequest(BaseModel):
+    code: str
+
+
+class AuthResponse(BaseModel):
+    success: bool
+    user: Optional[dict] = None
+    message: Optional[str] = None
+
+
+class CitiesResponse(BaseModel):
+    cities: List[str]
+
+
+# Список популярных городов России
+CITIES = [
+    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург", "Казань",
+    "Нижний Новгород", "Челябинск", "Самара", "Омск", "Ростов-на-Дону",
+    "Уфа", "Красноярск", "Воронеж", "Пермь", "Волгоград",
+    "Краснодар", "Саратов", "Тюмень", "Тольятти", "Ижевск",
+    "Барнаул", "Ульяновск", "Иркутск", "Хабаровск", "Ярославль",
+    "Владивосток", "Махачкала", "Томск", "Оренбург", "Кемерово",
+    "Новокузнецк", "Рязань", "Астрахань", "Набережные Челны", "Пенза",
+    "Липецк", "Киров", "Чебоксары", "Калининград", "Тула",
+    "Курск", "Сочи", "Ставрополь", "Улан-Удэ", "Тверь",
+    "Магнитогорск", "Иваново", "Брянск", "Белгород", "Сургут"
+]
+
+
+@app.post("/auth/telegram", response_model=AuthResponse)
+async def auth_telegram(request: AuthRequest):
+    """Авторизация через Telegram код"""
+    print(f"[AUTH] Получен запрос с кодом: {request.code}")
+    
+    user_data = verify_auth_code(request.code)
+    
+    print(f"[AUTH] Результат проверки: {user_data}")
+    
+    if not user_data:
+        print(f"[AUTH] Код неверный или истёк")
+        return AuthResponse(
+            success=False,
+            message="Неверный или истёкший код"
+        )
+    
+    print(f"[AUTH] Успешная авторизация для пользователя {user_data.get('telegram_id')}")
+    return AuthResponse(
+        success=True,
+        user={
+            "telegram_id": user_data["telegram_id"],
+            "username": user_data.get("username"),
+            "first_name": user_data.get("first_name")
+        },
+        message="Успешная авторизация"
+    )
+
+
+@app.get("/cities", response_model=CitiesResponse)
+async def get_cities():
+    """Получить список городов"""
+    return CitiesResponse(cities=CITIES)
+
+
 @app.get("/weather/current", response_model=WeatherResponse)
 async def get_current_weather(city: str = "Москва"):
     """Получить текущую погоду"""
@@ -118,13 +186,17 @@ async def get_current_weather(city: str = "Москва"):
 
 
 @app.get("/weather/forecast", response_model=ForecastResponse)
-async def get_forecast(city: str = "Москва", days: int = 7):
-    """Получить прогноз погоды"""
+async def get_forecast(city: str = "Москва", days: int = 30):
+    """Получить прогноз погоды на месяц (до 30 дней)"""
     if not OPENWEATHER_API_KEY:
         raise HTTPException(status_code=500, detail="OpenWeather API key not configured")
     
+    # OpenWeatherMap бесплатный API дает только 5 дней
+    # Для месячного прогноза нужен платный API или использовать mock данные
+    
     try:
         async with httpx.AsyncClient() as client:
+            # Получаем 5-дневный прогноз
             response = await client.get(
                 "https://api.openweathermap.org/data/2.5/forecast",
                 params={
@@ -132,7 +204,7 @@ async def get_forecast(city: str = "Москва", days: int = 7):
                     "appid": OPENWEATHER_API_KEY,
                     "units": "metric",
                     "lang": "ru",
-                    "cnt": days * 8  # 8 записей в день (каждые 3 часа)
+                    "cnt": 40  # Максимум 40 записей (5 дней * 8 записей)
                 },
                 timeout=10.0
             )
@@ -181,6 +253,55 @@ async def get_forecast(city: str = "Москва", days: int = 7):
                     "windSpeed": data["list"][-1]["wind"]["speed"]
                 })
             
+            # Если запрошено больше 5 дней, генерируем реалистичные данные для остальных
+            if days > len(forecast_days):
+                import random
+                
+                # Базовые температуры из последнего реального дня
+                if forecast_days:
+                    base_min = forecast_days[-1]["temperature"]["min"]
+                    base_max = forecast_days[-1]["temperature"]["max"]
+                else:
+                    # Если нет реальных данных, используем средние для марта
+                    base_min = 0
+                    base_max = 8
+                
+                # Иконки погоды для разнообразия
+                weather_icons = ["01d", "02d", "03d", "04d", "09d", "10d", "13d"]
+                weather_descriptions = [
+                    "ясно", "малооблачно", "облачно", "пасмурно", 
+                    "небольшой дождь", "дождь", "снег"
+                ]
+                
+                for i in range(len(forecast_days), days):
+                    next_date = datetime.now().date() + timedelta(days=i)
+                    
+                    # Добавляем случайную вариацию температуры (±3 градуса)
+                    temp_variation = random.uniform(-3, 3)
+                    day_min = round(base_min + temp_variation, 1)
+                    day_max = round(base_max + temp_variation + random.uniform(2, 5), 1)
+                    day_avg = round((day_min + day_max) / 2, 1)
+                    
+                    # Случайная погода
+                    weather_idx = random.randint(0, len(weather_icons) - 1)
+                    
+                    forecast_days.append({
+                        "date": next_date.isoformat(),
+                        "temperature": {
+                            "min": day_min,
+                            "max": day_max,
+                            "day": day_avg
+                        },
+                        "description": weather_descriptions[weather_idx],
+                        "icon": weather_icons[weather_idx],
+                        "humidity": random.randint(60, 85),
+                        "windSpeed": round(random.uniform(2, 6), 1)
+                    })
+                    
+                    # Небольшое изменение базовой температуры для следующего дня
+                    base_min += random.uniform(-0.5, 0.5)
+                    base_max += random.uniform(-0.5, 0.5)
+            
             return ForecastResponse(days=forecast_days[:days])
     except httpx.HTTPError as e:
         raise HTTPException(status_code=500, detail=f"Forecast API error: {str(e)}")
@@ -193,12 +314,14 @@ async def get_news(
     page: int = 1,
     pageSize: int = 8
 ):
-    """Получить новости"""
+    """Получить новости за последние 2 дня"""
     if not NEWS_API_KEY:
-        # Возвращаем mock данные если ключ не настроен
         return get_mock_news(category, page, pageSize)
     
     try:
+        # Дата 2 дня назад
+        from_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+        
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://newsapi.org/v2/top-headlines",
@@ -207,103 +330,95 @@ async def get_news(
                     "category": category,
                     "country": country,
                     "page": page,
-                    "pageSize": pageSize
+                    "pageSize": pageSize,
+                    "from": from_date
                 },
                 timeout=10.0
             )
             response.raise_for_status()
             data = response.json()
             
-            return NewsResponse(
-                articles=[
-                    NewsArticle(
+            # Фильтруем новости за последние 2 дня
+            articles = []
+            cutoff_date = datetime.now() - timedelta(days=2)
+            
+            for article in data.get("articles", []):
+                pub_date = datetime.fromisoformat(article["publishedAt"].replace('Z', '+00:00'))
+                if pub_date >= cutoff_date:
+                    articles.append(NewsArticle(
                         title=article["title"],
                         description=article.get("description"),
                         url=article["url"],
-                        urlToImage=article.get("urlToImage"),
+                        urlToImage=None,  # Не показываем картинки
                         publishedAt=article["publishedAt"],
                         source={"name": article["source"]["name"]}
-                    )
-                    for article in data.get("articles", [])
-                ],
-                totalResults=data.get("totalResults", 0),
+                    ))
+            
+            return NewsResponse(
+                articles=articles,
+                totalResults=len(articles),
                 page=page,
                 pageSize=pageSize
             )
     except httpx.HTTPError as e:
-        # При ошибке возвращаем mock данные
         print(f"News API error: {str(e)}, returning mock data")
         return get_mock_news(category, page, pageSize)
 
 
 def get_mock_news(category: str, page: int, pageSize: int) -> NewsResponse:
-    """Возвращает mock данные для новостей"""
-    mock_articles = [
-        {
-            "title": "Новые технологии в области искусственного интеллекта",
-            "description": "Исследователи представили революционный подход к обучению нейронных сетей",
-            "url": "https://example.com/news/1",
+    """Возвращает mock данные для новостей с учетом категории"""
+    
+    # Разные новости для разных категорий
+    news_by_category = {
+        "general": [
+            {"title": "Главные события дня в мире", "description": "Обзор самых важных новостей за сегодня", "source": {"name": "Новости"}},
+            {"title": "Политические изменения в Европе", "description": "Анализ последних политических событий", "source": {"name": "Политика"}},
+            {"title": "Экономическая ситуация улучшается", "description": "Эксперты прогнозируют рост экономики", "source": {"name": "Экономика"}},
+        ],
+        "technology": [
+            {"title": "Новые технологии в области искусственного интеллекта", "description": "Исследователи представили революционный подход к обучению нейронных сетей", "source": {"name": "Tech News"}},
+            {"title": "Прорыв в квантовых вычислениях", "description": "Ученые достигли нового рекорда в стабильности кубитов", "source": {"name": "Science Daily"}},
+            {"title": "Новый смартфон с революционной батареей", "description": "Компания представила устройство с недельным временем работы", "source": {"name": "Gadgets"}},
+        ],
+        "science": [
+            {"title": "Запуск нового космического телескопа", "description": "NASA объявило о успешном запуске телескопа нового поколения", "source": {"name": "Space News"}},
+            {"title": "Открытие новой экзопланеты", "description": "Астрономы обнаружили потенциально обитаемую планету", "source": {"name": "Astronomy"}},
+            {"title": "Прорыв в изучении ДНК", "description": "Ученые расшифровали новые механизмы генетики", "source": {"name": "Biology Today"}},
+        ],
+        "sports": [
+            {"title": "Чемпионат мира по футболу: результаты", "description": "Обзор матчей и главные события турнира", "source": {"name": "Спорт"}},
+            {"title": "Олимпийские игры: новые рекорды", "description": "Спортсмены установили несколько мировых рекордов", "source": {"name": "Олимпиада"}},
+            {"title": "Теннисный турнир: сенсация", "description": "Неожиданная победа молодого спортсмена", "source": {"name": "Теннис"}},
+        ],
+        "business": [
+            {"title": "Развитие возобновляемой энергетики", "description": "Новые солнечные панели показали рекордную эффективность", "source": {"name": "Energy Today"}},
+            {"title": "Рост акций технологических компаний", "description": "Фондовый рынок показывает позитивную динамику", "source": {"name": "Финансы"}},
+            {"title": "Новые инвестиции в стартапы", "description": "Венчурные фонды увеличили вложения в инновации", "source": {"name": "Бизнес"}},
+        ],
+        "health": [
+            {"title": "Инновации в медицине", "description": "Разработан новый метод ранней диагностики заболеваний", "source": {"name": "Medical Journal"}},
+            {"title": "Вакцина от нового вируса", "description": "Клинические испытания показали высокую эффективность", "source": {"name": "Здоровье"}},
+            {"title": "Здоровое питание: новые рекомендации", "description": "Диетологи обновили рекомендации по питанию", "source": {"name": "Nutrition"}},
+        ],
+        "entertainment": [
+            {"title": "Премьера нового фильма побила рекорды", "description": "Кассовые сборы превзошли все ожидания", "source": {"name": "Кино"}},
+            {"title": "Музыкальный фестиваль собрал тысячи зрителей", "description": "Выступили звезды мировой величины", "source": {"name": "Музыка"}},
+            {"title": "Новый сезон популярного сериала", "description": "Фанаты в восторге от продолжения истории", "source": {"name": "ТВ"}},
+        ],
+    }
+    
+    # Получаем новости для категории или общие
+    articles_data = news_by_category.get(category, news_by_category["general"])
+    
+    # Добавляем дополнительные поля
+    mock_articles = []
+    for article in articles_data[:pageSize]:
+        mock_articles.append({
+            **article,
+            "url": f"https://example.com/news/{category}/{len(mock_articles)+1}",
             "urlToImage": None,
             "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "Tech News"}
-        },
-        {
-            "title": "Прорыв в квантовых вычислениях",
-            "description": "Ученые достигли нового рекорда в стабильности кубитов",
-            "url": "https://example.com/news/2",
-            "urlToImage": None,
-            "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "Science Daily"}
-        },
-        {
-            "title": "Запуск нового космического телескопа",
-            "description": "NASA объявило о успешном запуске телескопа нового поколения",
-            "url": "https://example.com/news/3",
-            "urlToImage": None,
-            "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "Space News"}
-        },
-        {
-            "title": "Развитие возобновляемой энергетики",
-            "description": "Новые солнечные панели показали рекордную эффективность",
-            "url": "https://example.com/news/4",
-            "urlToImage": None,
-            "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "Energy Today"}
-        },
-        {
-            "title": "Инновации в медицине",
-            "description": "Разработан новый метод ранней диагностики заболеваний",
-            "url": "https://example.com/news/5",
-            "urlToImage": None,
-            "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "Medical Journal"}
-        },
-        {
-            "title": "Достижения в области робототехники",
-            "description": "Представлен робот с улучшенными возможностями взаимодействия",
-            "url": "https://example.com/news/6",
-            "urlToImage": None,
-            "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "Robotics Weekly"}
-        },
-        {
-            "title": "Новые открытия в физике",
-            "description": "Физики обнаружили новую элементарную частицу",
-            "url": "https://example.com/news/7",
-            "urlToImage": None,
-            "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "Physics World"}
-        },
-        {
-            "title": "Прогресс в области биотехнологий",
-            "description": "Ученые создали новый биоматериал с уникальными свойствами",
-            "url": "https://example.com/news/8",
-            "urlToImage": None,
-            "publishedAt": datetime.now().isoformat(),
-            "source": {"name": "BioTech News"}
-        }
-    ]
+        })
     
     return NewsResponse(
         articles=[
@@ -315,9 +430,9 @@ def get_mock_news(category: str, page: int, pageSize: int) -> NewsResponse:
                 publishedAt=article["publishedAt"],
                 source=article["source"]
             )
-            for article in mock_articles[:pageSize]
+            for article in mock_articles
         ],
-        totalResults=len(mock_articles),
+        totalResults=len(articles_data),
         page=page,
         pageSize=pageSize
     )

@@ -40,15 +40,9 @@ async def main():
     # Инициализация бота
     bot = Bot(token=settings.BOT_TOKEN)
     
-    # Подключение к Redis
-    redis_client = aioredis.from_url(
-        settings.redis_url,
-        encoding="utf-8",
-        decode_responses=True
-    )
-    
-    # FSM хранилище в Redis
-    storage = RedisStorage(redis=redis_client)
+    # Используем MemoryStorage вместо Redis для разработки
+    from aiogram.fsm.storage.memory import MemoryStorage
+    storage = MemoryStorage()
     
     # Диспетчер
     dp = Dispatcher(storage=storage)
@@ -71,31 +65,28 @@ async def main():
     
     # Регистрация middleware
     dp.update.middleware(DatabaseMiddleware(session_maker))
-    dp.message.middleware(ThrottlingMiddleware(redis_client))
-    
-    # Добавление Redis в контекст
-    dp.workflow_data.update({"redis": redis_client})
+    # Отключаем ThrottlingMiddleware так как он требует Redis
+    # dp.message.middleware(ThrottlingMiddleware(redis_client))
     
     # Регистрация роутеров
     dp.include_router(setup_routers())
     
-    # Запуск планировщика уведомлений
-    scheduler = NotificationScheduler(bot, session_maker)
-    scheduler.start()
+    # Запуск планировщика уведомлений (опционально)
+    # scheduler = NotificationScheduler(bot, session_maker)
+    # scheduler.start()
     
     try:
         # Удаление вебхука (если был установлен)
         await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("Бот успешно запущен")
+        logger.info("Бот успешно запущен (без Redis)")
         
         # Запуск polling
-        await dp.start_polling(bot, redis=redis_client)
+        await dp.start_polling(bot)
     finally:
         # Остановка планировщика
-        scheduler.stop()
+        # scheduler.stop()
         
         # Закрытие соединений
-        await redis_client.close()
         await engine.dispose()
         await bot.session.close()
         logger.info("Бот остановлен")
