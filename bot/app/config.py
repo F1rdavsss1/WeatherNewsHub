@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     
     # API Keys
-    WEATHER_API_KEY: str
-    NEWS_API_KEY: str
+    WEATHER_API_KEY: str = ""
+    NEWS_API_KEY: str = ""
     
     # Cache TTL (seconds)
     WEATHER_CACHE_TTL: int = 300
